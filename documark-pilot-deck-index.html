@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Watching and Being Watched — DocuMark Pilot | HONR 1010</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Courier+Prime:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #07090f;
+    --bg2: #0d1117;
+    --amber: #ffb300;
+    --amber-dim: #cc8f00;
+    --amber-glow: rgba(255,179,0,0.12);
+    --red: #ff4136;
+    --teal: #00d4c8;
+    --text: #d8dce8;
+    --text-dim: #7a8099;
+    --border: rgba(255,179,0,0.25);
+    --mono: 'Share Tech Mono', monospace;
+    --serif: 'Courier Prime', 'Courier New', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    overflow: hidden;
+    cursor: default;
+  }
+
+  /* Scanline overlay */
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.07) 2px,
+      rgba(0,0,0,0.07) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+  }
+
+  /* Noise grain overlay */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.35;
+    pointer-events: none;
+    z-index: 998;
+  }
+
+  /* ─── DECK WRAPPER ─── */
+  #deck {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ─── HUD: top bar ─── */
+  #hud-top {
+    position: fixed; top: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(7,9,15,0.85);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--amber-dim);
+  }
+  #hud-top .left { display: flex; align-items: center; gap: 16px; }
+  #rec-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+
+  #slide-counter { color: var(--text-dim); }
+
+  /* ─── HUD: bottom bar ─── */
+  #hud-bottom {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 24px;
+    border-top: 1px solid var(--border);
+    background: rgba(7,9,15,0.85);
+    backdrop-filter: blur(8px);
+    z-index: 100;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+  .nav-hint { display: flex; gap: 20px; align-items: center; }
+  .key {
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid var(--border);
+    padding: 1px 6px; border-radius: 3px;
+    font-size: 10px; color: var(--amber-dim);
+    margin-right: 4px;
+  }
+  .nav-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--amber);
+    font-family: var(--mono);
+    font-size: 18px;
+    padding: 2px 14px 4px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    line-height: 1;
+  }
+  .nav-btn:hover { background: var(--amber-glow); border-color: var(--amber); }
+  .nav-btn:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* Progress bar */
+  #progress-bar {
+    position: fixed; bottom: 36px; left: 0; right: 0;
+    height: 2px;
+    background: rgba(255,179,0,0.1);
+    z-index: 100;
+  }
+  #progress-fill {
+    height: 100%;
+    background: var(--amber);
+    transition: width 0.4s cubic-bezier(0.4,0,0.2,1);
+    box-shadow: 0 0 8px var(--amber);
+  }
+
+  /* ─── SLIDE ─── */
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 80px 8vw 60px;
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity 0.45s ease, transform 0.45s cubic-bezier(0.4,0,0.2,1);
+    pointer-events: none;
+  }
+  .slide.active {
+    opacity: 1; transform: translateX(0);
+    pointer-events: all;
+  }
+  .slide.exit {
+    opacity: 0; transform: translateX(-40px);
+  }
+
+  .slide-inner {
+    width: 100%; max-width: 860px;
+  }
+
+  /* ─── TYPOGRAPHY ─── */
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    color: var(--amber);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .eyebrow::before {
+    content: '';
+    display: inline-block;
+    width: 24px; height: 1px;
+    background: var(--amber);
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(2rem, 5vw, 3.6rem);
+    line-height: 1.05;
+    color: var(--amber);
+    letter-spacing: -0.01em;
+    text-shadow: 0 0 40px rgba(255,179,0,0.35);
+    margin-bottom: 24px;
+  }
+  h2 {
+    font-family: var(--mono);
+    font-size: clamp(1.4rem, 3.5vw, 2.4rem);
+    color: var(--amber);
+    letter-spacing: 0.02em;
+    text-shadow: 0 0 30px rgba(255,179,0,0.25);
+    margin-bottom: 20px;
+    line-height: 1.2;
+  }
+  .subtitle {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: clamp(1rem, 2.2vw, 1.35rem);
+    color: var(--text);
+    line-height: 1.6;
+    max-width: 680px;
+  }
+  p {
+    font-family: var(--serif);
+    font-size: clamp(0.85rem, 1.6vw, 1.05rem);
+    line-height: 1.75;
+    color: var(--text);
+    margin-bottom: 14px;
+  }
+  .highlight { color: var(--amber); font-weight: 700; }
+  .muted { color: var(--text-dim); font-size: 0.9em; }
+  em { color: var(--teal); font-style: italic; }
+
+  /* ─── DECORATIVE ELEMENTS ─── */
+  .corner-bracket {
+    position: absolute;
+    width: 28px; height: 28px;
+    border-color: var(--amber-dim);
+    border-style: solid;
+    opacity: 0.5;
+  }
+  .corner-bracket.tl { top: 72px; left: 8vw; border-width: 2px 0 0 2px; }
+  .corner-bracket.tr { top: 72px; right: 8vw; border-width: 2px 2px 0 0; }
+  .corner-bracket.bl { bottom: 48px; left: 8vw; border-width: 0 0 2px 2px; }
+  .corner-bracket.br { bottom: 48px; right: 8vw; border-width: 0 2px 2px 0; }
+
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, var(--amber) 0%, transparent 100%);
+    margin: 20px 0;
+    opacity: 0.4;
+  }
+
+  #hud-top, #hud-bottom, #progress-bar {
+    transition: opacity 0.6s ease;
+  }
+  #slide-1 .big-question {
+    font-family: var(--mono);
+    font-size: clamp(1.1rem, 2.8vw, 1.9rem);
+    color: var(--text);
+    line-height: 1.5;
+    border-left: 3px solid var(--amber);
+    padding-left: 20px;
+    margin: 28px 0;
+    max-width: 700px;
+  }
+  #slide-1 .course-tag {
+    display: inline-block;
+    font-size: 11px;
+    letter-spacing: 0.16em;
+    border: 1px solid var(--border);
+    padding: 4px 12px;
+    color: var(--text-dim);
+    margin-top: 20px;
+  }
+
+  /* ─── SLIDE 2: WHAT IS DOCUMARK ─── */
+  .track-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 20px 0;
+  }
+  .track-item {
+    background: var(--amber-glow);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    display: flex; align-items: flex-start; gap: 10px;
+  }
+  .track-item .icon {
+    color: var(--amber);
+    flex-shrink: 0;
+    font-size: 0.9rem;
+    margin-top: 1px;
+  }
+  .track-note {
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: 0.88rem;
+    color: var(--text-dim);
+    border-top: 1px solid var(--border);
+    padding-top: 14px;
+    margin-top: 6px;
+  }
+
+  /* ─── SLIDE 3: WHY IT MATTERS ─── */
+  .thinker-row {
+    display: flex; gap: 16px; margin: 18px 0;
+    flex-wrap: wrap;
+  }
+  .thinker-card {
+    flex: 1; min-width: 200px;
+    background: rgba(0,212,200,0.06);
+    border: 1px solid rgba(0,212,200,0.25);
+    padding: 14px 16px;
+  }
+  .thinker-card .name {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.14em;
+    color: var(--teal);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .thinker-card p { font-size: 0.83rem; margin: 0; }
+
+  .thesis-box {
+    border: 1px solid var(--amber);
+    background: var(--amber-glow);
+    padding: 18px 22px;
+    margin: 20px 0;
+    font-family: var(--serif);
+    font-style: italic;
+    font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  /* ─── SLIDE 4: PATHS ─── */
+  .paths-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 16px; margin: 20px 0;
+  }
+  .path-card {
+    border: 1px solid var(--border);
+    padding: 20px;
+    background: rgba(13,17,23,0.6);
+    position: relative;
+  }
+  .path-card.path-a { border-color: var(--amber); background: var(--amber-glow); }
+  .path-card.path-b { border-color: rgba(0,212,200,0.4); background: rgba(0,212,200,0.05); }
+  .path-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .path-a .path-label { color: var(--amber); }
+  .path-b .path-label { color: var(--teal); }
+  .path-title {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    color: var(--text);
+    margin-bottom: 12px;
+    line-height: 1.35;
+  }
+  .path-steps { list-style: none; padding: 0; }
+  .path-steps li {
+    font-family: var(--serif);
+    font-size: 0.82rem;
+    color: var(--text-dim);
+    padding: 4px 0;
+    padding-left: 16px;
+    position: relative;
+    line-height: 1.5;
+  }
+  .path-steps li::before {
+    content: '›';
+    position: absolute; left: 0;
+    color: var(--amber-dim);
+  }
+  .path-b .path-steps li::before { color: var(--teal); }
+
+  .deliverables-note {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    border: 1px dashed var(--border);
+    padding: 10px 14px;
+    margin-top: 10px;
+    text-align: center;
+  }
+
+  /* ─── SLIDE 5: TIMELINE ─── */
+  .timeline {
+    margin: 16px 0;
+    display: flex; flex-direction: column; gap: 0;
+    position: relative;
+  }
+  .timeline::before {
+    content: '';
+    position: absolute; left: 88px; top: 0; bottom: 0;
+    width: 1px; background: var(--border);
+  }
+  .tl-item {
+    display: flex; gap: 0; align-items: flex-start;
+    padding: 10px 0;
+    position: relative;
+  }
+  .tl-date {
+    width: 88px; flex-shrink: 0;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    color: var(--amber-dim);
+    padding-right: 16px;
+    text-align: right;
+    padding-top: 2px;
+  }
+  .tl-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--amber);
+    background: var(--bg);
+    flex-shrink: 0;
+    margin-top: 3px;
+    position: relative; z-index: 1;
+    margin-left: -5px;
+  }
+  .tl-dot.highlight-dot { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
+  .tl-content {
+    padding-left: 16px; flex: 1;
+  }
+  .tl-content .event {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--text);
+    letter-spacing: 0.04em;
+  }
+  .tl-content .desc {
+    font-family: var(--serif);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+  .phase-label {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    color: var(--teal);
+    text-transform: uppercase;
+    padding: 6px 0 4px 104px;
+  }
+
+  /* ─── SLIDE 6: INVITATION ─── */
+  #slide-6 .manifesto {
+    font-family: var(--serif);
+    font-size: clamp(1.05rem, 2.2vw, 1.4rem);
+    line-height: 1.75;
+    color: var(--text);
+    max-width: 720px;
+    margin-bottom: 28px;
+  }
+  #slide-6 .manifesto strong {
+    color: var(--amber);
+    font-weight: 700;
+  }
+  .opt-in-tag {
+    display: inline-flex; align-items: center; gap: 10px;
+    border: 1px solid var(--amber);
+    padding: 10px 20px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    color: var(--amber);
+    margin-top: 8px;
+  }
+  .opt-in-tag .arrow { font-size: 1rem; }
+
+  /* ─── PILOT PRINCIPLES (appears on slide 6) ─── */
+  .principles {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-top: 18px;
+  }
+  .principle {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    border: 1px solid var(--border);
+    padding: 5px 12px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  /* ─── SLIDE 7: REC ─── */
+  #slide-7 {
+    background: #000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .rec-center {
+    display: flex; flex-direction: column; align-items: center; gap: 28px;
+  }
+  .rec-eye {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--red);
+    animation: rec-pulse 2.8s ease-in-out infinite;
+    box-shadow: 0 0 0 0 rgba(255,65,54,0.6);
+  }
+  @keyframes rec-pulse {
+    0%   { opacity: 1; box-shadow: 0 0 0 0 rgba(255,65,54,0.6); }
+    50%  { opacity: 0.08; box-shadow: 0 0 0 22px rgba(255,65,54,0); }
+    100% { opacity: 1; box-shadow: 0 0 0 0 rgba(255,65,54,0.6); }
+  }
+  .rec-label {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    letter-spacing: 0.35em;
+    color: var(--red);
+    animation: rec-pulse 2.8s ease-in-out infinite;
+    text-transform: uppercase;
+  }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .track-grid, .paths-grid { grid-template-columns: 1fr; }
+    .thinker-row { flex-direction: column; }
+    .corner-bracket { display: none; }
+    h1 { font-size: 1.8rem; }
+    h2 { font-size: 1.4rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HUD Top -->
+<div id="hud-top" role="banner" aria-label="Presentation header">
+  <div class="left">
+    <div id="rec-dot" role="img" aria-label="Recording indicator"></div>
+    <span>DOCUMARK PILOT // HONR 1010 // SPRING 2026</span>
+  </div>
+  <span id="slide-counter" aria-live="polite" aria-atomic="true">01 / 06</span>
+</div>
+
+<!-- Deck -->
+<main id="deck" role="main" aria-label="Slide presentation">
+
+  <!-- ░░ SLIDE 1 — PROVOCATION ░░ -->
+  <section class="slide active" id="slide-1" role="region" aria-label="Slide 1 of 6: The Provocation">
+    <div class="corner-bracket tl" aria-hidden="true"></div>
+    <div class="corner-bracket tr" aria-hidden="true"></div>
+    <div class="corner-bracket bl" aria-hidden="true"></div>
+    <div class="corner-bracket br" aria-hidden="true"></div>
+    <div class="slide-inner">
+      <div class="eyebrow">Watching and Being Watched</div>
+      <h1>What happens<br>to your thinking<br>when you know<br>you're being watched?</h1>
+      <div class="big-question" role="blockquote">
+        DocuMark logs your keystrokes, pauses, revisions, and copy-paste events.<br>
+        So does that change what you write — or who you are while writing?
+      </div>
+      <div class="course-tag">AN OPTIONAL EXPLORATION // THE EPISTEME ARCADE // TR[AI]LS + LIBRARY</div>
+    </div>
+  </section>
+
+  <!-- ░░ SLIDE 2 — WHAT IS DOCUMARK ░░ -->
+  <section class="slide" id="slide-2" role="region" aria-label="Slide 2 of 6: What is DocuMark">
+    <div class="corner-bracket tl" aria-hidden="true"></div>
+    <div class="corner-bracket tr" aria-hidden="true"></div>
+    <div class="corner-bracket bl" aria-hidden="true"></div>
+    <div class="corner-bracket br" aria-hidden="true"></div>
+    <div class="slide-inner">
+      <div class="eyebrow">System Overview</div>
+      <h2>What DocuMark<br>actually does</h2>
+      <p>DocuMark is a <span class="highlight">writing transparency tool</span> — it makes your composing process legible in ways traditional submission cannot. Before you decide whether to use it, you should know exactly what it sees.</p>
+
+      <div class="track-grid" role="list" aria-label="What DocuMark tracks">
+        <div class="track-item" role="listitem">
+          <span class="icon" aria-hidden="true">⌨</span>
+          <span>Keystrokes, pauses, and revision patterns as you write</span>
+        </div>
+        <div class="track-item" role="listitem">
+          <span class="icon" aria-hidden="true">⧉</span>
+          <span>Copy-paste events and pasted text volume</span>
+        </div>
+        <div class="track-item" role="listitem">
+          <span class="icon" aria-hidden="true">◈</span>
+          <span>Generates an effort score and an ownership score</span>
+        </div>
+        <div class="track-item" role="listitem">
+          <span class="icon" aria-hidden="true">◎</span>
+          <span>Estimates percentage of AI-generated vs. human-written text</span>
+        </div>
+      </div>
+
+      <p class="track-note">What it cannot see: what you're <em>thinking</em>. Whether you struggled. Whether you learned. Those remain yours. <span class="muted">// Data will not be used punitively. Full disclosure provided before you begin.</span></p>
+    </div>
+  </section>
+
+  <!-- ░░ SLIDE 3 — WHY IT MATTERS ░░ -->
+  <section class="slide" id="slide-3" role="region" aria-label="Slide 3 of 6: Why This Matters">
+    <div class="corner-bracket tl" aria-hidden="true"></div>
+    <div class="corner-bracket tr" aria-hidden="true"></div>
+    <div class="corner-bracket bl" aria-hidden="true"></div>
+    <div class="corner-bracket br" aria-hidden="true"></div>
+    <div class="slide-inner">
+      <div class="eyebrow">Why This Matters</div>
+      <h2>Transparency is never neutral.<br>Neither is its absence.</h2>
+
+      <div class="thinker-row" role="list" aria-label="Theoretical frameworks">
+        <div class="thinker-card" role="listitem">
+          <div class="name">Shoshana Zuboff</div>
+          <p>Behavioral data doesn't just record what you do — it predicts and shapes future behavior. Who benefits from the data? Who sets the terms?</p>
+        </div>
+        <div class="thinker-card" role="listitem">
+          <div class="name">Intellectual Privacy</div>
+          <p>Even the <em>possibility</em> of surveillance exerts a chilling effect on thought, speech, and creativity — before any data is collected at all.</p>
+        </div>
+        <div class="thinker-card" role="listitem">
+          <div class="name">The Panopticon</div>
+          <p>Not a metaphor. A functional description of what any monitoring system does: it makes the writer aware of being seen, and that awareness changes the writing.</p>
+        </div>
+      </div>
+
+      <div class="thesis-box" role="note">
+        This Exploration doesn't ask you to render a verdict on DocuMark. It asks an honest question: <strong>What are the trade-offs of process transparency — and what do those trade-offs reveal about intellectual privacy, student agency, and academic integrity?</strong>
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ SLIDE 4 — YOUR PATHS ░░ -->
+  <section class="slide" id="slide-4" role="region" aria-label="Slide 4 of 6: Choose Your Path">
+    <div class="corner-bracket tl" aria-hidden="true"></div>
+    <div class="corner-bracket tr" aria-hidden="true"></div>
+    <div class="corner-bracket bl" aria-hidden="true"></div>
+    <div class="corner-bracket br" aria-hidden="true"></div>
+    <div class="slide-inner">
+      <div class="eyebrow">Agency // Your Choice</div>
+      <h2>Two paths.<br>Same question.<br>Different terrain.</h2>
+
+      <div class="paths-grid" role="list" aria-label="Participation paths">
+        <div class="path-card path-a" role="listitem">
+          <div class="path-label">Path A — DocuMark</div>
+          <div class="path-title">AI-Assisted + Process Transparency</div>
+          <ul class="path-steps" aria-label="Path A steps">
+            <li>Ideate with Perplexity (shareable link)</li>
+            <li>Draft and revise directly in DocuMark</li>
+            <li>Reflect honestly on what it felt like to write under the gaze</li>
+          </ul>
+        </div>
+        <div class="path-card path-b" role="listitem">
+          <div class="path-label">Path B — Non-DocuMark</div>
+          <div class="path-title">Your Usual Workflow, Unmonitored</div>
+          <ul class="path-steps" aria-label="Path B steps">
+            <li>Write in any environment you normally use</li>
+            <li>AI for brainstorming only — or none at all</li>
+            <li>Reflect on what it felt like to write without institutional surveillance</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="deliverables-note" role="note">
+        BOTH PATHS → SAME DELIVERABLES: Critical Essay (25 pts) + Process Reflection (12 pts) + Anonymous Survey (3 pts) = <span class="highlight">40 pts</span> applicable to any Arcade region
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ SLIDE 5 — TIMELINE ░░ -->
+  <section class="slide" id="slide-5" role="region" aria-label="Slide 5 of 6: Pilot Timeline">
+    <div class="corner-bracket tl" aria-hidden="true"></div>
+    <div class="corner-bracket tr" aria-hidden="true"></div>
+    <div class="corner-bracket bl" aria-hidden="true"></div>
+    <div class="corner-bracket br" aria-hidden="true"></div>
+    <div class="slide-inner">
+      <div class="eyebrow">Operational Timeline</div>
+      <h2>Key dates &amp;<br>milestones</h2>
+
+      <nav class="timeline" role="list" aria-label="Pilot timeline">
+        <div class="phase-label" role="presentation">// IMPLEMENTATION</div>
+        <div class="tl-item" role="listitem">
+          <div class="tl-date">Mar 16</div>
+          <div class="tl-dot" aria-hidden="true"></div>
+          <div class="tl-content">
+            <div class="event">Assignment Introduced</div>
+            <div class="desc">Opt-in form opens on Canvas — choose your path</div>
+          </div>
+        </div>
+        <div class="tl-item" role="listitem">
+          <div class="tl-date">Mar 30</div>
+          <div class="tl-dot" aria-hidden="true"></div>
+          <div class="tl-content">
+            <div class="event">Async Training Available</div>
+            <div class="desc">DocuMark setup + data-practices disclosure for Path A</div>
+          </div>
+        </div>
+        <div class="tl-item" role="listitem">
+          <div class="tl-date">Apr 6</div>
+          <div class="tl-dot highlight-dot" aria-hidden="true"></div>
+          <div class="tl-content">
+            <div class="event"><span class="highlight">PILOT LAUNCH</span></div>
+            <div class="desc">Begin composing your essay on your chosen path</div>
+          </div>
+        </div>
+        <div class="tl-item" role="listitem">
+          <div class="tl-date">Apr 24</div>
+          <div class="tl-dot" aria-hidden="true"></div>
+          <div class="tl-content">
+            <div class="event">Pilot Concludes</div>
+            <div class="desc">All submissions due; survey opens week of April 27</div>
+          </div>
+        </div>
+        <div class="phase-label" role="presentation">// EVALUATION</div>
+        <div class="tl-item" role="listitem">
+          <div class="tl-date">May 7</div>
+          <div class="tl-dot" aria-hidden="true"></div>
+          <div class="tl-content">
+            <div class="event">Possible Discussion Session</div>
+            <div class="desc">Collective debrief on trade-offs — your data, our conversation</div>
+          </div>
+        </div>
+      </nav>
+    </div>
+  </section>
+
+  <!-- ░░ SLIDE 6 — INVITATION ░░ -->
+  <section class="slide" id="slide-6" role="region" aria-label="Slide 6 of 6: The Invitation">
+    <div class="corner-bracket tl" aria-hidden="true"></div>
+    <div class="corner-bracket tr" aria-hidden="true"></div>
+    <div class="corner-bracket bl" aria-hidden="true"></div>
+    <div class="corner-bracket br" aria-hidden="true"></div>
+    <div class="slide-inner">
+      <div class="eyebrow">The Invitation // Seekers</div>
+      <h2>You are both<br>analyst and subject.</h2>
+
+      <div class="manifesto" role="note">
+        In The Episteme Arcade, this Exploration positions you as both a <strong>Seeker</strong> and a witness — to yourself. You are being asked to produce genuine evidence about how institutional systems shape human formation.<br><br>
+        <strong>The measure is the learning, not the metric.</strong><br>
+        Your honest experience — including any gaming of the system, any self-censorship, any surprise — is the most valuable data this Exploration can generate.
+      </div>
+
+      <div class="divider" aria-hidden="true"></div>
+
+      <div class="opt-in-tag" role="note" aria-label="How to participate">
+        <span class="arrow" aria-hidden="true">→</span>
+        OPT IN VIA CANVAS BY SATURDAY, APRIL 4 // INDICATE PATH A OR B // QUESTIONS? REACH OUT BEFORE YOU BEGIN
+      </div>
+
+      <div class="principles" role="list" aria-label="Pilot commitments">
+        <div class="principle" role="listitem">Agency: fully opt-in</div>
+        <div class="principle" role="listitem">Transparency: full disclosure</div>
+        <div class="principle" role="listitem">Limited data use</div>
+        <div class="principle" role="listitem">No punitive use</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ░░ SLIDE 7 — REC ░░ -->
+  <section class="slide" id="slide-7" role="region" aria-label="End of presentation. Recording indicator.">
+    <div class="rec-center">
+      <div class="rec-eye" aria-hidden="true"></div>
+      <div class="rec-label" aria-hidden="true">[ REC ]</div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Progress + Bottom HUD -->
+<div id="progress-bar" role="progressbar" aria-valuemin="1" aria-valuemax="6" aria-valuenow="1" aria-label="Slide progress">
+  <div id="progress-fill" style="width:16.67%"></div>
+</div>
+
+<footer id="hud-bottom" role="contentinfo" aria-label="Navigation instructions">
+  <span>HONR 1010 // SPRING 2026 // OKLAHOMA STATE UNIVERSITY</span>
+  <div class="nav-hint" aria-label="Slide navigation">
+    <button class="nav-btn" id="btn-prev" onclick="prev()" aria-label="Previous slide">&#8592;</button>
+    <button class="nav-btn" id="btn-next" onclick="next()" aria-label="Next slide">&#8594;</button>
+  </div>
+</footer>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const counter = document.getElementById('slide-counter');
+  const progressFill = document.getElementById('progress-fill');
+  const progressBar = document.getElementById('progress-bar');
+  let current = 0;
+  let transitioning = false;
+
+  function pad(n) { return String(n).padStart(2,'0'); }
+
+  function goTo(idx) {
+    if (transitioning || idx === current || idx < 0 || idx >= slides.length) return;
+    transitioning = true;
+
+    slides[current].classList.remove('active');
+    slides[current].classList.add('exit');
+    current = idx;
+    slides[current].classList.add('active');
+
+    const pct = ((current + 1) / slides.length * 100).toFixed(2);
+    progressFill.style.width = pct + '%';
+    counter.textContent = pad(current + 1) + ' / ' + pad(slides.length);
+    progressBar.setAttribute('aria-valuenow', current + 1);
+
+    // Hide HUD on final REC slide for full immersion
+    const isRec = current === slides.length - 1;
+    document.getElementById('hud-top').style.opacity = isRec ? '0' : '1';
+    document.getElementById('hud-bottom').style.opacity = isRec ? '0' : '1';
+    document.getElementById('progress-bar').style.opacity = isRec ? '0' : '1';
+
+    setTimeout(() => {
+      document.querySelectorAll('.slide.exit').forEach(s => s.classList.remove('exit'));
+      transitioning = false;
+    }, 460);
+  }
+
+  function next() { goTo(current + 1); }
+  function prev() { goTo(current - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+  });
+
+  // Touch/swipe support
+  let touchStartX = 0;
+  document.addEventListener('touchstart', e => { touchStartX = e.touches[0].clientX; }, {passive:true});
+  document.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    if (Math.abs(dx) > 50) { dx < 0 ? next() : prev(); }
+  }, {passive:true});
+
+  // Click navigation
+  document.getElementById('deck').addEventListener('click', e => {
+    if (e.target.closest('a') || e.target.closest('button')) return;
+    const x = e.clientX / window.innerWidth;
+    x > 0.5 ? next() : prev();
+  });
+</script>
+</body>
+</html>
