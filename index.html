@@ -85,6 +85,12 @@
     animation: blink 1.2s ease-in-out infinite;
   }
   @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.15} }
+  @media (prefers-reduced-motion: reduce) {
+    #rec-dot, .rec-eye, .rec-label { animation: none !important; opacity: 1; }
+    .slide { transition: none !important; }
+    #progress-fill { transition: none !important; }
+    #hud-top, #hud-bottom, #progress-bar { transition: none !important; }
+  }
 
   #slide-counter { color: var(--text-dim); }
 
@@ -553,14 +559,14 @@
     <div id="rec-dot" role="img" aria-label="Recording indicator"></div>
     <span>DOCUMARK PILOT // HONR 1010 // SPRING 2026</span>
   </div>
-  <span id="slide-counter" aria-live="polite" aria-atomic="true">01 / 06</span>
+  <span id="slide-counter" aria-live="polite" aria-atomic="true">01 / 07</span>
 </div>
 
 <!-- Deck -->
 <main id="deck" role="main" aria-label="Slide presentation">
 
   <!-- ░░ SLIDE 1 — PROVOCATION ░░ -->
-  <section class="slide active" id="slide-1" role="region" aria-label="Slide 1 of 6: The Provocation">
+  <section class="slide active" id="slide-1" role="region" aria-label="Slide 1 of 7: The Provocation">
     <div class="corner-bracket tl" aria-hidden="true"></div>
     <div class="corner-bracket tr" aria-hidden="true"></div>
     <div class="corner-bracket bl" aria-hidden="true"></div>
@@ -577,7 +583,7 @@
   </section>
 
   <!-- ░░ SLIDE 2 — WHAT IS DOCUMARK ░░ -->
-  <section class="slide" id="slide-2" role="region" aria-label="Slide 2 of 6: What is DocuMark">
+  <section class="slide" id="slide-2" role="region" aria-label="Slide 2 of 7: What is DocuMark">
     <div class="corner-bracket tl" aria-hidden="true"></div>
     <div class="corner-bracket tr" aria-hidden="true"></div>
     <div class="corner-bracket bl" aria-hidden="true"></div>
@@ -611,7 +617,7 @@
   </section>
 
   <!-- ░░ SLIDE 3 — WHY IT MATTERS ░░ -->
-  <section class="slide" id="slide-3" role="region" aria-label="Slide 3 of 6: Why This Matters">
+  <section class="slide" id="slide-3" role="region" aria-label="Slide 3 of 7: Why This Matters">
     <div class="corner-bracket tl" aria-hidden="true"></div>
     <div class="corner-bracket tr" aria-hidden="true"></div>
     <div class="corner-bracket bl" aria-hidden="true"></div>
@@ -642,7 +648,7 @@
   </section>
 
   <!-- ░░ SLIDE 4 — YOUR PATHS ░░ -->
-  <section class="slide" id="slide-4" role="region" aria-label="Slide 4 of 6: Choose Your Path">
+  <section class="slide" id="slide-4" role="region" aria-label="Slide 4 of 7: Choose Your Path">
     <div class="corner-bracket tl" aria-hidden="true"></div>
     <div class="corner-bracket tr" aria-hidden="true"></div>
     <div class="corner-bracket bl" aria-hidden="true"></div>
@@ -679,7 +685,7 @@
   </section>
 
   <!-- ░░ SLIDE 5 — TIMELINE ░░ -->
-  <section class="slide" id="slide-5" role="region" aria-label="Slide 5 of 6: Pilot Timeline">
+  <section class="slide" id="slide-5" role="region" aria-label="Slide 5 of 7: Pilot Timeline">
     <div class="corner-bracket tl" aria-hidden="true"></div>
     <div class="corner-bracket tr" aria-hidden="true"></div>
     <div class="corner-bracket bl" aria-hidden="true"></div>
@@ -736,7 +742,7 @@
   </section>
 
   <!-- ░░ SLIDE 6 — INVITATION ░░ -->
-  <section class="slide" id="slide-6" role="region" aria-label="Slide 6 of 6: The Invitation">
+  <section class="slide" id="slide-6" role="region" aria-label="Slide 6 of 7: The Invitation">
     <div class="corner-bracket tl" aria-hidden="true"></div>
     <div class="corner-bracket tr" aria-hidden="true"></div>
     <div class="corner-bracket bl" aria-hidden="true"></div>
@@ -778,7 +784,7 @@
 </main>
 
 <!-- Progress + Bottom HUD -->
-<div id="progress-bar" role="progressbar" aria-valuemin="1" aria-valuemax="6" aria-valuenow="1" aria-label="Slide progress">
+<div id="progress-bar" role="progressbar" aria-valuemin="1" aria-valuemax="7" aria-valuenow="1" aria-label="Slide progress">
   <div id="progress-fill" style="width:16.67%"></div>
 </div>
 
@@ -798,6 +804,9 @@
   let current = 0;
   let transitioning = false;
 
+  // Init: hide all inactive slides from screen readers
+  slides.forEach((s, i) => { s.setAttribute('aria-hidden', i === 0 ? 'false' : 'true'); });
+
   function pad(n) { return String(n).padStart(2,'0'); }
 
   function goTo(idx) {
@@ -806,8 +815,11 @@
 
     slides[current].classList.remove('active');
     slides[current].classList.add('exit');
+    slides[current].setAttribute('aria-hidden', 'true');
+
     current = idx;
     slides[current].classList.add('active');
+    slides[current].setAttribute('aria-hidden', 'false');
 
     const pct = ((current + 1) / slides.length * 100).toFixed(2);
     progressFill.style.width = pct + '%';
@@ -817,10 +829,16 @@
     // Hide HUD on final REC slide for full immersion
     const isRec = current === slides.length - 1;
     document.getElementById('hud-top').style.opacity = isRec ? '0' : '1';
+    document.getElementById('hud-top').setAttribute('aria-hidden', isRec ? 'true' : 'false');
     document.getElementById('hud-bottom').style.opacity = isRec ? '0' : '1';
+    document.getElementById('hud-bottom').setAttribute('aria-hidden', isRec ? 'true' : 'false');
+    document.getElementById('hud-bottom').style.pointerEvents = isRec ? 'none' : 'all';
     document.getElementById('progress-bar').style.opacity = isRec ? '0' : '1';
 
+    // Move focus to slide heading for screen readers
     setTimeout(() => {
+      const heading = slides[current].querySelector('h1, h2, [role="region"]');
+      if (heading) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); }
       document.querySelectorAll('.slide.exit').forEach(s => s.classList.remove('exit'));
       transitioning = false;
     }, 460);
